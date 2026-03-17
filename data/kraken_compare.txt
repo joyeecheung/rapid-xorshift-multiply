@@ -1,0 +1,19 @@
+                               benchmark:    score |  master_ |      % |
+===================================================+==========+========+
+                           ai-astar-orig:     43.2 S     43.5 S    0.7 |
+               audio-beat-detection-orig:     31.3 S     31.2 S   -0.3 |
+                          audio-dft-orig:     39.2 S     38.8 S   -1.0 |
+                          audio-fft-orig:     27.0 S     27.3 S    1.1 |
+                   audio-oscillator-orig:     27.1 |     27.2 |    0.4 |
+              imaging-gaussian-blur-orig:     62.7 |     62.7 |        |
+                   imaging-darkroom-orig:     69.6 |     69.8 |    0.3 |
+                 imaging-desaturate-orig:     26.2 |     26.5 |    1.1 |
+               json-parse-financial-orig:     15.1 S     15.4 S    2.0 |
+           json-stringify-tinderbox-orig:     16.6 S     16.6 S        |
+                stanford-crypto-aes-orig:     36.3 |     36.4 |    0.3 |
+                stanford-crypto-ccm-orig:     29.4 |     29.5 |    0.3 |
+             stanford-crypto-pbkdf2-orig:     31.3 |     31.2 S   -0.3 |
+   stanford-crypto-sha256-iterative-orig:     14.2 S     14.3 S    0.7 |
+                                  Kraken:    469.2 S    470.3 S    0.2 |
+---------------------------------------------------+----------+--------+
+Wrote /home/ubuntu/v8/v8/test/benchmarks/csuite/_results/master_kraken_compare.

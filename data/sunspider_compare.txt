@@ -1,0 +1,31 @@
+                               benchmark:    score |  master_ |      % |
+===================================================+==========+========+
+                       3d-cube-sunspider:      5.3 S      5.2 S   -1.9 |
+                      3d-morph-sunspider:      3.6 S      3.5 S   -2.8 |
+                   3d-raytrace-sunspider:      4.7 S      4.7 S        |
+           access-binary-trees-sunspider:      1.4 S      1.3 S   -7.1 |
+               access-fannkuch-sunspider:      5.7 S      5.7 S        |
+                  access-nbody-sunspider:      1.6 S      1.6 S        |
+                 access-nsieve-sunspider:      2.8 S      2.9 S    3.6 |
+      bitops-3bit-bits-in-byte-sunspider:      1.0 |      1.0 |        |
+           bitops-bits-in-byte-sunspider:      1.3 S      1.4 S    7.7 |
+            bitops-bitwise-and-sunspider:      1.2 S      1.2 S        |
+            bitops-nsieve-bits-sunspider:      3.4 S      3.4 S        |
+         controlflow-recursive-sunspider:      1.3 S      1.3 S        |
+                    crypto-aes-sunspider:      3.2 S      3.2 S        |
+                    crypto-md5-sunspider:      2.2 S      2.2 S        |
+                   crypto-sha1-sunspider:      2.2 S      2.2 S        |
+             date-format-tofte-sunspider:      3.1 S      3.1 S        |
+             date-format-xparb-sunspider:      2.3 S      2.3 S        |
+                   math-cordic-sunspider:      1.6 S      1.6 S        |
+             math-partial-sums-sunspider:      5.8 S      6.0 S    3.4 |
+            math-spectral-norm-sunspider:      1.0 |      1.0 |        |
+                    regexp-dna-sunspider:      3.7 S      3.8 S    2.7 |
+                 string-base64-sunspider:      2.5 S      2.5 S        |
+                  string-fasta-sunspider:      4.7 S      4.8 S    2.1 |
+               string-tagcloud-sunspider:      7.9 S      7.8 S   -1.3 |
+            string-unpack-code-sunspider:      9.7 S      9.7 S        |
+         string-validate-input-sunspider:      3.7 S      3.6 S   -2.7 |
+                               SunSpider:     86.9 S     86.9 S        |
+---------------------------------------------------+----------+--------+
+Wrote /home/ubuntu/v8/v8/test/benchmarks/csuite/_results/master_sunspider_compare.
