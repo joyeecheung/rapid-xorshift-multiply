@@ -1,0 +1,109 @@
+From ada4bbff694106230f979b2534ce9cf0b47bea66 Mon Sep 17 00:00:00 2001
+From: Joyee Cheung <joyeec9h3@gmail.com>
+Date: Thu, 29 Jan 2026 03:30:37 +0100
+Subject: [PATCH 5/5] build,test: test array index hash collision
+
+This enables v8_enable_seeded_array_index_hash and add a test for it.
+
+Fixes: https://hackerone.com/reports/3511792
+---
+ test/fixtures/array-hash-collision.js    | 27 ++++++++++++++++++++++++
+ test/pummel/test-array-hash-collision.js | 27 ++++++++++++++++++++++++
+ tools/v8_gypfiles/features.gypi          |  6 ++++++
+ 3 files changed, 60 insertions(+)
+ create mode 100644 test/fixtures/array-hash-collision.js
+ create mode 100644 test/pummel/test-array-hash-collision.js
+
+diff --git a/test/fixtures/array-hash-collision.js b/test/fixtures/array-hash-collision.js
+new file mode 100644
+index 00000000000..b803de6b9d4
+--- /dev/null
++++ b/test/fixtures/array-hash-collision.js
+@@ -0,0 +1,27 @@
++'use strict';
++
++// See https://hackerone.com/reports/3511792
++
++const payload = [];
++const val = 1234;
++const MOD = 2 ** 19;
++const CHN = 2 ** 17;
++const REP = 2 ** 17;
++
++if (process.argv[2] === 'benign') {
++  for (let i = 0; i < CHN + REP; i++) {
++    payload.push(`${val + i}`);
++  }
++} else {
++  let j = val + MOD;
++  for (let i = 1; i < CHN; i++) {
++    payload.push(`${j}`);
++    j = (j + i) % MOD;
++  }
++  for (let k = 0; k < REP; k++) {
++    payload.push(`${val}`);
++  }
++}
++
++const string = JSON.stringify({ data: payload });
++JSON.parse(string);
+diff --git a/test/pummel/test-array-hash-collision.js b/test/pummel/test-array-hash-collision.js
+new file mode 100644
+index 00000000000..8e3337818ac
+--- /dev/null
++++ b/test/pummel/test-array-hash-collision.js
+@@ -0,0 +1,27 @@
++'use strict';
++
++// This is a regression test for https://hackerone.com/reports/3511792
++
++require('../common');
++const assert = require('assert');
++const { spawnSync } = require('child_process');
++const { performance } = require('perf_hooks');
++const fixtures = require('../common/fixtures');
++
++const fixturePath = fixtures.path('array-hash-collision.js');
++
++const t0 = performance.now();
++const benignResult = spawnSync(process.execPath, [fixturePath, 'benign']);
++const benignTime = performance.now() - t0;
++assert.strictEqual(benignResult.status, 0);
++console.log(`Benign test completed in ${benignTime.toFixed(2)}ms.`);
++
++const t1 = performance.now();
++const maliciousResult = spawnSync(process.execPath, [fixturePath, 'malicious'], {
++  timeout: Math.ceil(benignTime * 10),
++});
++const maliciousTime = performance.now() - t1;
++console.log(`Malicious test completed in ${maliciousTime.toFixed(2)}ms.`);
++
++assert.strictEqual(maliciousResult.status, 0, `Hash flooding regression detected: ` +
++  `Benign took ${benignTime}ms, malicious took more than ${maliciousTime}ms.`);
+diff --git a/tools/v8_gypfiles/features.gypi b/tools/v8_gypfiles/features.gypi
+index 81272ed99d7..53886830721 100644
+--- a/tools/v8_gypfiles/features.gypi
++++ b/tools/v8_gypfiles/features.gypi
+@@ -202,6 +202,9 @@
+     # Use Siphash as added protection against hash flooding attacks.
+     'v8_use_siphash%': 0,
+ 
++    # Enable seeded array index hash.
++    'v8_enable_seeded_array_index_hash%': 1,
++
+     # Use Perfetto (https://perfetto.dev) as the default TracingController. Not
+     # currently implemented.
+     'v8_use_perfetto%': 0,
+@@ -450,6 +453,9 @@
+       ['v8_use_siphash==1', {
+         'defines': ['V8_USE_SIPHASH',],
+       }],
++      ['v8_enable_seeded_array_index_hash==1', {
++        'defines': ['V8_ENABLE_SEEDED_ARRAY_INDEX_HASH',],
++      }],
+       ['dcheck_always_on!=0', {
+         'defines': ['DEBUG',],
+       }, {
+-- 
+2.50.1 (Apple Git-155)
+

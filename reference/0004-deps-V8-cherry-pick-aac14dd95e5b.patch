@@ -1,0 +1,259 @@
+From 22036bd2f4ef6883a5aace7d9030ef7f59ad8722 Mon Sep 17 00:00:00 2001
+From: Joyee Cheung <joyee@igalia.com>
+Date: Wed, 11 Mar 2026 13:37:22 +0100
+Subject: [PATCH 4/5] deps: V8: cherry-pick aac14dd95e5b
+
+Original commit message:
+
+    [string] add 3rd round to seeded array index hash
+
+    Since we already have 3 derived secrets, and arithmetics are
+    relatively cheap, add a 3rd round to the xorshift-multiply
+    seeding scheme. This brings the bias from ~3.4 to ~0.4.
+
+    Bug: 477515021
+    Change-Id: I1ef48954bcee8768d8c90db06ac8adb02f06cebf
+    Reviewed-on: https://chromium-review.googlesource.com/c/v8/v8/+/7655117
+    Reviewed-by: Chengzhong Wu <cwu631@bloomberg.net>
+    Commit-Queue: Joyee Cheung <joyee@igalia.com>
+    Reviewed-by: Leszek Swirski <leszeks@chromium.org>
+    Cr-Commit-Position: refs/heads/main@{#105824}
+
+Refs: https://github.com/v8/v8/commit/aac14dd95e5be0d487eba6bcdaf9cef4f8bd806c
+---
+ common.gypi                                |  2 +-
+ deps/v8/src/codegen/code-stub-assembler.cc | 20 +++++++++++++++-----
+ deps/v8/src/numbers/hash-seed-inl.h        |  2 ++
+ deps/v8/src/numbers/hash-seed.cc           |  4 ++++
+ deps/v8/src/numbers/hash-seed.h            |  6 ++++++
+ deps/v8/src/strings/string-hasher-inl.h    | 10 ++++++++--
+ deps/v8/src/strings/string-hasher.h        | 16 +++++++++-------
+ 7 files changed, 45 insertions(+), 15 deletions(-)
+
+diff --git a/common.gypi b/common.gypi
+index 283c60eab35..5fced33791c 100644
+--- a/common.gypi
++++ b/common.gypi
+@@ -38,7 +38,7 @@
+ 
+     # Reset this number to 0 on major V8 upgrades.
+     # Increment by one for each non-official patch applied to deps/v8.
+-    'v8_embedder_string': '-node.44',
++    'v8_embedder_string': '-node.45',
+ 
+     ##### V8 defaults for Node.js #####
+ 
+diff --git a/deps/v8/src/codegen/code-stub-assembler.cc b/deps/v8/src/codegen/code-stub-assembler.cc
+index 8d71465f065..588d02761c3 100644
+--- a/deps/v8/src/codegen/code-stub-assembler.cc
++++ b/deps/v8/src/codegen/code-stub-assembler.cc
+@@ -2549,7 +2549,7 @@ TNode<Uint32T> CodeStubAssembler::LoadJSReceiverIdentityHash(
+ #ifdef V8_ENABLE_SEEDED_ARRAY_INDEX_HASH
+ // Mirror C++ StringHasher::SeedArrayIndexValue.
+ TNode<Uint32T> CodeStubAssembler::SeedArrayIndexValue(TNode<Uint32T> value) {
+-  // Load m1 and m2 from the hash seed byte array. In the compiled code
++  // Load m1, m2 and m3 from the hash seed byte array. In the compiled code
+   // these will always come from the read-only roots.
+   TNode<ByteArray> hash_seed = CAST(LoadRoot(RootIndex::kHashSeed));
+   intptr_t base_offset = OFFSET_OF_DATA_START(ByteArray) - kHeapObjectTag;
+@@ -2557,9 +2557,11 @@ TNode<Uint32T> CodeStubAssembler::SeedArrayIndexValue(TNode<Uint32T> value) {
+       hash_seed, IntPtrConstant(base_offset + HashSeed::kDerivedM1Offset));
+   TNode<Uint32T> m2 = Load<Uint32T>(
+       hash_seed, IntPtrConstant(base_offset + HashSeed::kDerivedM2Offset));
++  TNode<Uint32T> m3 = Load<Uint32T>(
++      hash_seed, IntPtrConstant(base_offset + HashSeed::kDerivedM3Offset));
+ 
+   TNode<Word32T> x = value;
+-  // 2-round xorshift-multiply.
++  // 3-round xorshift-multiply.
+   x = Word32Xor(x, Word32Shr(x, Uint32Constant(Name::kArrayIndexHashShift)));
+   x = Word32And(Uint32Mul(Unsigned(x), m1),
+                 Uint32Constant(Name::kArrayIndexValueMask));
+@@ -2567,25 +2569,33 @@ TNode<Uint32T> CodeStubAssembler::SeedArrayIndexValue(TNode<Uint32T> value) {
+   x = Word32And(Uint32Mul(Unsigned(x), m2),
+                 Uint32Constant(Name::kArrayIndexValueMask));
+   x = Word32Xor(x, Word32Shr(x, Uint32Constant(Name::kArrayIndexHashShift)));
++  x = Word32And(Uint32Mul(Unsigned(x), m3),
++                Uint32Constant(Name::kArrayIndexValueMask));
++  x = Word32Xor(x, Word32Shr(x, Uint32Constant(Name::kArrayIndexHashShift)));
+ 
+   return Unsigned(x);
+ }
+ 
+ // Mirror C++ StringHasher::UnseedArrayIndexValue.
+ TNode<Uint32T> CodeStubAssembler::UnseedArrayIndexValue(TNode<Uint32T> value) {
+-  // Load m1_inv and m2_inv from the hash seed byte array. In the compiled code
+-  // these will always come from the read-only roots.
++  // Load m1_inv, m2_inv and m3_inv from the hash seed byte array. In the
++  // compiled code these will always come from the read-only roots.
+   TNode<ByteArray> hash_seed = CAST(LoadRoot(RootIndex::kHashSeed));
+   intptr_t base_offset = OFFSET_OF_DATA_START(ByteArray) - kHeapObjectTag;
+   TNode<Uint32T> m1_inv = Load<Uint32T>(
+       hash_seed, IntPtrConstant(base_offset + HashSeed::kDerivedM1InvOffset));
+   TNode<Uint32T> m2_inv = Load<Uint32T>(
+       hash_seed, IntPtrConstant(base_offset + HashSeed::kDerivedM2InvOffset));
++  TNode<Uint32T> m3_inv = Load<Uint32T>(
++      hash_seed, IntPtrConstant(base_offset + HashSeed::kDerivedM3InvOffset));
+ 
+   TNode<Word32T> x = value;
+-  // 2-round xorshift-multiply (inverse).
++  // 3-round xorshift-multiply (inverse).
+   // Xorshift is an involution when kShift is at least half of the value width.
+   x = Word32Xor(x, Word32Shr(x, Uint32Constant(Name::kArrayIndexHashShift)));
++  x = Word32And(Uint32Mul(Unsigned(x), m3_inv),
++                Uint32Constant(Name::kArrayIndexValueMask));
++  x = Word32Xor(x, Word32Shr(x, Uint32Constant(Name::kArrayIndexHashShift)));
+   x = Word32And(Uint32Mul(Unsigned(x), m2_inv),
+                 Uint32Constant(Name::kArrayIndexValueMask));
+   x = Word32Xor(x, Word32Shr(x, Uint32Constant(Name::kArrayIndexHashShift)));
+diff --git a/deps/v8/src/numbers/hash-seed-inl.h b/deps/v8/src/numbers/hash-seed-inl.h
+index 26a1fe22037..8988cf8418f 100644
+--- a/deps/v8/src/numbers/hash-seed-inl.h
++++ b/deps/v8/src/numbers/hash-seed-inl.h
+@@ -31,6 +31,8 @@ inline uint32_t HashSeed::m1() const { return data_->m1; }
+ inline uint32_t HashSeed::m1_inv() const { return data_->m1_inv; }
+ inline uint32_t HashSeed::m2() const { return data_->m2; }
+ inline uint32_t HashSeed::m2_inv() const { return data_->m2_inv; }
++inline uint32_t HashSeed::m3() const { return data_->m3; }
++inline uint32_t HashSeed::m3_inv() const { return data_->m3_inv; }
+ #endif  // V8_ENABLE_SEEDED_ARRAY_INDEX_HASH
+ 
+ }  // namespace internal
+diff --git a/deps/v8/src/numbers/hash-seed.cc b/deps/v8/src/numbers/hash-seed.cc
+index b455c2fb1a0..4251cc3ef15 100644
+--- a/deps/v8/src/numbers/hash-seed.cc
++++ b/deps/v8/src/numbers/hash-seed.cc
+@@ -51,6 +51,8 @@ constexpr void DeriveSecretsForArrayIndexHash(HashSeed::Data* data) {
+   data->m1_inv = derive_multiplier_inverse(data->secrets[0]);
+   data->m2 = derive_multiplier(data->secrets[1]);
+   data->m2_inv = derive_multiplier_inverse(data->secrets[1]);
++  data->m3 = derive_multiplier(data->secrets[2]);
++  data->m3_inv = derive_multiplier_inverse(data->secrets[2]);
+ }
+ #endif  // V8_ENABLE_SEEDED_ARRAY_INDEX_HASH
+ 
+@@ -75,6 +77,7 @@ const HashSeed::Data* const HashSeed::kDefaultData = &kDefaultSeed;
+ // Compile-time verification that m * m_inv === 1 for the derived secrets.
+ static_assert(is_modular_inverse(kDefaultSeed.m1, kDefaultSeed.m1_inv));
+ static_assert(is_modular_inverse(kDefaultSeed.m2, kDefaultSeed.m2_inv));
++static_assert(is_modular_inverse(kDefaultSeed.m3, kDefaultSeed.m3_inv));
+ #endif  // V8_ENABLE_SEEDED_ARRAY_INDEX_HASH
+ 
+ // static
+@@ -102,6 +105,7 @@ void HashSeed::InitializeRoots(Isolate* isolate) {
+   DeriveSecretsForArrayIndexHash(data);
+   DCHECK(is_modular_inverse(data->m1, data->m1_inv));
+   DCHECK(is_modular_inverse(data->m2, data->m2_inv));
++  DCHECK(is_modular_inverse(data->m3, data->m3_inv));
+ #endif  // V8_ENABLE_SEEDED_ARRAY_INDEX_HASH
+ #endif  // V8_USE_DEFAULT_HASHER_SECRET
+ }
+diff --git a/deps/v8/src/numbers/hash-seed.h b/deps/v8/src/numbers/hash-seed.h
+index b1dca8ef3e1..7cabdf1223c 100644
+--- a/deps/v8/src/numbers/hash-seed.h
++++ b/deps/v8/src/numbers/hash-seed.h
+@@ -53,6 +53,8 @@ class V8_EXPORT_PRIVATE HashSeed {
+     uint32_t m1_inv;  // modular inverse of m1 mod 2^kArrayIndexValueBits
+     uint32_t m2;  // lower kArrayIndexValueBits bits of secret[1], must be odd
+     uint32_t m2_inv;  // modular inverse of m2 mod 2^kArrayIndexValueBits
++    uint32_t m3;  // lower kArrayIndexValueBits bits of secret[2], must be odd
++    uint32_t m3_inv;  // modular inverse of m3 mod 2^kArrayIndexValueBits
+ #endif                // V8_ENABLE_SEEDED_ARRAY_INDEX_HASH
+   };
+ 
+@@ -65,11 +67,15 @@ class V8_EXPORT_PRIVATE HashSeed {
+   static constexpr int kDerivedM1InvOffset = offsetof(Data, m1_inv);
+   static constexpr int kDerivedM2Offset = offsetof(Data, m2);
+   static constexpr int kDerivedM2InvOffset = offsetof(Data, m2_inv);
++  static constexpr int kDerivedM3Offset = offsetof(Data, m3);
++  static constexpr int kDerivedM3InvOffset = offsetof(Data, m3_inv);
+ 
+   inline uint32_t m1() const;
+   inline uint32_t m1_inv() const;
+   inline uint32_t m2() const;
+   inline uint32_t m2_inv() const;
++  inline uint32_t m3() const;
++  inline uint32_t m3_inv() const;
+ #endif  // V8_ENABLE_SEEDED_ARRAY_INDEX_HASH
+ 
+   // Generates a hash seed (from --hash-seed or the RNG) and writes it
+diff --git a/deps/v8/src/strings/string-hasher-inl.h b/deps/v8/src/strings/string-hasher-inl.h
+index 90ab93e0820..caa78969cd4 100644
+--- a/deps/v8/src/strings/string-hasher-inl.h
++++ b/deps/v8/src/strings/string-hasher-inl.h
+@@ -79,15 +79,18 @@ uint32_t StringHasher::SeedArrayIndexValue(uint32_t value,
+                                            const HashSeed seed) {
+   uint32_t m1 = seed.m1();
+   uint32_t m2 = seed.m2();
++  uint32_t m3 = seed.m3();
+   constexpr uint32_t kShift = Name::kArrayIndexHashShift;
+   constexpr uint32_t kMask = Name::kArrayIndexValueMask;
+-  // 2-round xorshift-multiply.
++  // 3-round xorshift-multiply.
+   uint32_t x = value;
+   x ^= x >> kShift;
+   x = (x * m1) & kMask;
+   x ^= x >> kShift;
+   x = (x * m2) & kMask;
+   x ^= x >> kShift;
++  x = (x * m3) & kMask;
++  x ^= x >> kShift;
+   return x;
+ }
+ 
+@@ -95,12 +98,15 @@ uint32_t StringHasher::UnseedArrayIndexValue(uint32_t value,
+                                              const HashSeed seed) {
+   uint32_t m1_inv = seed.m1_inv();
+   uint32_t m2_inv = seed.m2_inv();
++  uint32_t m3_inv = seed.m3_inv();
+   uint32_t x = value;
+   constexpr uint32_t kShift = Name::kArrayIndexHashShift;
+   constexpr uint32_t kMask = Name::kArrayIndexValueMask;
+-  // 2-round xorshift-multiply.
++  // 3-round xorshift-multiply (inverse).
+   // Xorshift is an involution when kShift is at least half of the value width.
+   x ^= x >> kShift;
++  x = (x * m3_inv) & kMask;
++  x ^= x >> kShift;
+   x = (x * m2_inv) & kMask;
+   x ^= x >> kShift;
+   x = (x * m1_inv) & kMask;
+diff --git a/deps/v8/src/strings/string-hasher.h b/deps/v8/src/strings/string-hasher.h
+index 2c204c24067..02baa5825c3 100644
+--- a/deps/v8/src/strings/string-hasher.h
++++ b/deps/v8/src/strings/string-hasher.h
+@@ -73,22 +73,24 @@ class V8_EXPORT_PRIVATE StringHasher final {
+ 
+ #ifdef V8_ENABLE_SEEDED_ARRAY_INDEX_HASH
+   // When V8_ENABLE_SEEDED_ARRAY_INDEX_HASH is enabled, the numeric value
+-  // will be scrambled with 2 rounds of xorshift-multiply.
++  // will be scrambled with 3 rounds of xorshift-multiply.
+   //
+   //   x ^= x >> kShift;  x = (x * m1) & kMask;   // round 1
+   //   x ^= x >> kShift;  x = (x * m2) & kMask;   // round 2
++  //   x ^= x >> kShift;  x = (x * m3) & kMask;   // round 3
+   //   x ^= x >> kShift;                          // finalize
+   //
+-  // To decode, apply the same steps with the modular inverses of m1 and m2 in
+-  // reverse order.
++  // To decode, apply the same steps with the modular inverses of m1, m2
++  // and m3 in reverse order.
+   //
+-  //   x ^= x >> kShift;  x = (x * m2_inv) & kMask;   // round 1
+-  //   x ^= x >> kShift;  x = (x * m1_inv) & kMask;   // round 2
++  //   x ^= x >> kShift;  x = (x * m3_inv) & kMask;   // round 1
++  //   x ^= x >> kShift;  x = (x * m2_inv) & kMask;   // round 2
++  //   x ^= x >> kShift;  x = (x * m1_inv) & kMask;   // round 3
+   //   x ^= x >> kShift;                              // finalize
+   //
+   // where kShift = kArrayIndexValueBits / 2, kMask = kArrayIndexValueMask,
+-  // m1, m2 (both odd) are derived from the Isolate's rapidhash secrets.
+-  // m1_inv, m2_inv (modular inverses) are precomputed so that
++  // m1, m2, m3 (all odd) are derived from the Isolate's rapidhash secrets.
++  // m1_inv, m2_inv, m3_inv (modular inverses) are precomputed so that
+   // UnseedArrayIndexValue can quickly recover the original value.
+   static V8_INLINE uint32_t SeedArrayIndexValue(uint32_t value,
+                                                 const HashSeed seed);
+-- 
+2.50.1 (Apple Git-155)
+

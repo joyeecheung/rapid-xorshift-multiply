@@ -1,0 +1,521 @@
+From d8f8a749a520a35930a2045dc92fb3998f94a670 Mon Sep 17 00:00:00 2001
+From: Joyee Cheung <joyee@igalia.com>
+Date: Fri, 27 Feb 2026 00:54:30 +0100
+Subject: [PATCH 2/5] deps: V8: backport 185f0fe09b72
+
+Original commit message:
+
+    [numbers] Refactor HashSeed as a lightweight view over ByteArray
+
+    Instead of copying the seed and secrets into a struct with value
+    fields, HashSeed now stores a pointer pointing either into the
+    read-only ByteArray, or the static default seed for off-heap
+    HashSeed::Default() calls. The underlying storage is always
+    8-byte aligned so we can cast it directly into a struct.
+
+    Change-Id: I5896a7f2ae24296eb4c80b757a5d90ac70a34866
+    Reviewed-on: https://chromium-review.googlesource.com/c/v8/v8/+/7609720
+    Reviewed-by: Leszek Swirski <leszeks@chromium.org>
+    Commit-Queue: Joyee Cheung <joyee@igalia.com>
+    Cr-Commit-Position: refs/heads/main@{#105531}
+
+Refs: https://github.com/v8/v8/commit/185f0fe09b72fb869fdcf9a89f40ff2295436bca
+Co-authored-by: Joyee Cheung <joyeec9h3@gmail.com>
+---
+ common.gypi                                   |  2 +-
+ deps/v8/BUILD.bazel                           |  1 +
+ deps/v8/BUILD.gn                              |  1 +
+ deps/v8/src/DEPS                              |  2 +-
+ deps/v8/src/heap/factory-base.cc              | 10 ++--
+ deps/v8/src/heap/factory-base.h               |  7 ++-
+ deps/v8/src/heap/heap.cc                      | 26 ---------
+ deps/v8/src/heap/heap.h                       |  3 -
+ deps/v8/src/heap/setup-heap-internal.cc       |  8 ++-
+ deps/v8/src/numbers/hash-seed-inl.h           | 25 +++------
+ deps/v8/src/numbers/hash-seed.cc              | 55 +++++++++++++++++++
+ deps/v8/src/numbers/hash-seed.h               | 54 ++++++++++++++----
+ deps/v8/src/objects/fixed-array-inl.h         | 11 ++--
+ deps/v8/src/objects/fixed-array.h             |  6 +-
+ .../v8/src/snapshot/read-only-deserializer.cc |  3 +-
+ .../src/snapshot/shared-heap-deserializer.cc  |  2 +-
+ 16 files changed, 137 insertions(+), 79 deletions(-)
+ create mode 100644 deps/v8/src/numbers/hash-seed.cc
+
+diff --git a/common.gypi b/common.gypi
+index 31ce3f73f51..011355970f7 100644
+--- a/common.gypi
++++ b/common.gypi
+@@ -38,7 +38,7 @@
+ 
+     # Reset this number to 0 on major V8 upgrades.
+     # Increment by one for each non-official patch applied to deps/v8.
+-    'v8_embedder_string': '-node.42',
++    'v8_embedder_string': '-node.43',
+ 
+     ##### V8 defaults for Node.js #####
+ 
+diff --git a/deps/v8/BUILD.bazel b/deps/v8/BUILD.bazel
+index 578e3fd4332..9f1f501d070 100644
+--- a/deps/v8/BUILD.bazel
++++ b/deps/v8/BUILD.bazel
+@@ -1937,6 +1937,7 @@ filegroup(
+         "src/numbers/conversions.h",
+         "src/numbers/conversions-inl.h",
+         "src/numbers/hash-seed.h",
++        "src/numbers/hash-seed.cc",
+         "src/numbers/hash-seed-inl.h",
+         "src/numbers/ieee754.cc",
+         "src/numbers/ieee754.h",
+diff --git a/deps/v8/BUILD.gn b/deps/v8/BUILD.gn
+index 0d29a79fad3..3a354c523a0 100644
+--- a/deps/v8/BUILD.gn
++++ b/deps/v8/BUILD.gn
+@@ -5598,6 +5598,7 @@ v8_source_set("v8_base_without_compiler") {
+     "src/logging/runtime-call-stats.cc",
+     "src/logging/tracing-flags.cc",
+     "src/numbers/conversions.cc",
++    "src/numbers/hash-seed.cc",
+     "src/numbers/ieee754.cc",
+     "src/numbers/math-random.cc",
+     "src/objects/abstract-code.cc",
+diff --git a/deps/v8/src/DEPS b/deps/v8/src/DEPS
+index 53082237f54..87cd9afdafe 100644
+--- a/deps/v8/src/DEPS
++++ b/deps/v8/src/DEPS
+@@ -135,7 +135,7 @@ specific_include_rules = {
+   "heap\.cc": [
+     "+third_party/rapidhash-v8/secret.h",
+   ],
+-  "hash-seed-inl\.h": [
++  "hash-seed\.cc": [
+     "+third_party/rapidhash-v8/secret.h",
+   ],
+ }
+diff --git a/deps/v8/src/heap/factory-base.cc b/deps/v8/src/heap/factory-base.cc
+index dc43757deda..5a17db0c98d 100644
+--- a/deps/v8/src/heap/factory-base.cc
++++ b/deps/v8/src/heap/factory-base.cc
+@@ -301,9 +301,9 @@ Handle<ProtectedWeakFixedArray> FactoryBase<Impl>::NewProtectedWeakFixedArray(
+ }
+ 
+ template <typename Impl>
+-Handle<ByteArray> FactoryBase<Impl>::NewByteArray(int length,
+-                                                  AllocationType allocation) {
+-  return ByteArray::New(isolate(), length, allocation);
++Handle<ByteArray> FactoryBase<Impl>::NewByteArray(
++    int length, AllocationType allocation, AllocationAlignment alignment) {
++  return ByteArray::New(isolate(), length, allocation, alignment);
+ }
+ 
+ template <typename Impl>
+@@ -1241,8 +1241,8 @@ FactoryBase<Impl>::AllocateRawTwoByteInternalizedString(
+ 
+ template <typename Impl>
+ Tagged<HeapObject> FactoryBase<Impl>::AllocateRawArray(
+-    int size, AllocationType allocation) {
+-  Tagged<HeapObject> result = AllocateRaw(size, allocation);
++    int size, AllocationType allocation, AllocationAlignment alignment) {
++  Tagged<HeapObject> result = AllocateRaw(size, allocation, alignment);
+   if ((size >
+        isolate()->heap()->AsHeap()->MaxRegularHeapObjectSize(allocation)) &&
+       v8_flags.use_marking_progress_bar) {
+diff --git a/deps/v8/src/heap/factory-base.h b/deps/v8/src/heap/factory-base.h
+index 0edc4189a6e..c896e762995 100644
+--- a/deps/v8/src/heap/factory-base.h
++++ b/deps/v8/src/heap/factory-base.h
+@@ -197,7 +197,8 @@ class FactoryBase : public TorqueGeneratedFactory<Impl> {
+ 
+   // The function returns a pre-allocated empty byte array for length = 0.
+   Handle<ByteArray> NewByteArray(
+-      int length, AllocationType allocation = AllocationType::kYoung);
++      int length, AllocationType allocation = AllocationType::kYoung,
++      AllocationAlignment alignment = kTaggedAligned);
+ 
+   // Allocates a trusted byte array in trusted space, initialized with zeros.
+   Handle<TrustedByteArray> NewTrustedByteArray(
+@@ -410,7 +411,9 @@ class FactoryBase : public TorqueGeneratedFactory<Impl> {
+   static constexpr int kNumberToStringBufferSize = 32;
+ 
+   // Allocate memory for an uninitialized array (e.g., a FixedArray or similar).
+-  Tagged<HeapObject> AllocateRawArray(int size, AllocationType allocation);
++  Tagged<HeapObject> AllocateRawArray(
++      int size, AllocationType allocation,
++      AllocationAlignment alignment = kTaggedAligned);
+   Tagged<HeapObject> AllocateRawFixedArray(int length,
+                                            AllocationType allocation);
+   Tagged<HeapObject> AllocateRawWeakArrayList(int length,
+diff --git a/deps/v8/src/heap/heap.cc b/deps/v8/src/heap/heap.cc
+index 3e5874937f6..211ca14606a 100644
+--- a/deps/v8/src/heap/heap.cc
++++ b/deps/v8/src/heap/heap.cc
+@@ -127,7 +127,6 @@
+ #include "src/tracing/trace-event.h"
+ #include "src/utils/utils-inl.h"
+ #include "src/utils/utils.h"
+-#include "third_party/rapidhash-v8/secret.h"
+ 
+ #ifdef V8_ENABLE_CONSERVATIVE_STACK_SCANNING
+ #include "src/heap/conservative-stack-visitor-inl.h"
+@@ -5916,31 +5915,6 @@ void Heap::SetUpSpaces(LinearAllocationArea& new_allocation_info,
+   }
+ }
+ 
+-void Heap::InitializeHashSeed() {
+-  DCHECK(!deserialization_complete_);
+-  uint64_t new_hash_seed;
+-  if (v8_flags.hash_seed == 0) {
+-    int64_t rnd = isolate()->random_number_generator()->NextInt64();
+-    new_hash_seed = static_cast<uint64_t>(rnd);
+-  } else {
+-    new_hash_seed = static_cast<uint64_t>(v8_flags.hash_seed);
+-  }
+-
+-  Tagged<ByteArray> hash_seed = ReadOnlyRoots(this).hash_seed();
+-
+-  MemCopy(hash_seed->begin(), reinterpret_cast<uint8_t*>(&new_hash_seed),
+-          kInt64Size);
+-
+-#if V8_USE_DEFAULT_HASHER_SECRET
+-  MemCopy(hash_seed->begin() + kInt64Size,
+-          reinterpret_cast<const uint8_t*>(RAPIDHASH_DEFAULT_SECRET),
+-          kInt64Size * 3);
+-#else
+-  rapidhash_make_secret(new_hash_seed, reinterpret_cast<uint64_t*>(
+-                                           hash_seed->begin() + kInt64Size));
+-#endif  // V8_USE_DEFAULT_HASHER_SECRET
+-}
+-
+ std::shared_ptr<v8::TaskRunner> Heap::GetForegroundTaskRunner(
+     TaskPriority priority) const {
+   return V8::GetCurrentPlatform()->GetForegroundTaskRunner(
+diff --git a/deps/v8/src/heap/heap.h b/deps/v8/src/heap/heap.h
+index c209a1c98d9..a628527510b 100644
+--- a/deps/v8/src/heap/heap.h
++++ b/deps/v8/src/heap/heap.h
+@@ -691,9 +691,6 @@ class Heap final {
+   // Prepares the heap, setting up for deserialization.
+   void InitializeMainThreadLocalHeap(LocalHeap* main_thread_local_heap);
+ 
+-  // (Re-)Initialize hash seed from flag or RNG.
+-  void InitializeHashSeed();
+-
+   // Invoked once for the process from V8::Initialize.
+   static void InitializeOncePerProcess();
+ 
+diff --git a/deps/v8/src/heap/setup-heap-internal.cc b/deps/v8/src/heap/setup-heap-internal.cc
+index 2b5c6f60c6f..b6e7e6ba88e 100644
+--- a/deps/v8/src/heap/setup-heap-internal.cc
++++ b/deps/v8/src/heap/setup-heap-internal.cc
+@@ -16,6 +16,7 @@
+ #include "src/init/heap-symbols.h"
+ #include "src/init/setup-isolate.h"
+ #include "src/interpreter/interpreter.h"
++#include "src/numbers/hash-seed.h"
+ #include "src/objects/arguments.h"
+ #include "src/objects/call-site-info.h"
+ #include "src/objects/cell-inl.h"
+@@ -893,9 +894,10 @@ bool Heap::CreateImportantReadOnlyObjects() {
+   // Hash seed for strings
+ 
+   Factory* factory = isolate()->factory();
+-  set_hash_seed(
+-      *factory->NewByteArray(kInt64Size * 4, AllocationType::kReadOnly));
+-  InitializeHashSeed();
++  set_hash_seed(*factory->NewByteArray(HashSeed::kTotalSize,
++                                       AllocationType::kReadOnly,
++                                       AllocationAlignment::kDoubleAligned));
++  HashSeed::InitializeRoots(isolate());
+ 
+   // Important strings and symbols
+   for (const ConstantStringInit& entry : kImportantConstantStringTable) {
+diff --git a/deps/v8/src/numbers/hash-seed-inl.h b/deps/v8/src/numbers/hash-seed-inl.h
+index fb539869226..7ba3fbffb8d 100644
+--- a/deps/v8/src/numbers/hash-seed-inl.h
++++ b/deps/v8/src/numbers/hash-seed-inl.h
+@@ -8,7 +8,6 @@
+ #include "src/numbers/hash-seed.h"
+ #include "src/objects/fixed-array-inl.h"
+ #include "src/roots/roots-inl.h"
+-#include "third_party/rapidhash-v8/secret.h"
+ 
+ namespace v8 {
+ namespace internal {
+@@ -19,23 +18,13 @@ inline HashSeed::HashSeed(Isolate* isolate)
+ inline HashSeed::HashSeed(LocalIsolate* isolate)
+     : HashSeed(ReadOnlyRoots(isolate)) {}
+ 
+-inline HashSeed::HashSeed(ReadOnlyRoots roots) {
+-  // roots.hash_seed is not aligned
+-  MemCopy(&seed_, roots.hash_seed()->begin(), sizeof(seed_));
+-  MemCopy(secret_, roots.hash_seed()->begin() + sizeof(seed_), sizeof(secret_));
+-}
+-
+-inline HashSeed::HashSeed(uint64_t seed, const uint64_t secret[3])
+-    : seed_(seed),
+-      secret_{
+-          secret[0],
+-          secret[1],
+-          secret[2],
+-      } {}
+-
+-inline HashSeed HashSeed::Default() {
+-  return HashSeed(0, RAPIDHASH_DEFAULT_SECRET);
+-}
++inline HashSeed::HashSeed(ReadOnlyRoots roots)
++    : data_(reinterpret_cast<const Data*>(roots.hash_seed()->begin())) {}
++
++inline HashSeed HashSeed::Default() { return HashSeed(kDefaultData); }
++
++inline uint64_t HashSeed::seed() const { return data_->seed; }
++inline const uint64_t* HashSeed::secret() const { return data_->secrets; }
+ 
+ }  // namespace internal
+ }  // namespace v8
+diff --git a/deps/v8/src/numbers/hash-seed.cc b/deps/v8/src/numbers/hash-seed.cc
+new file mode 100644
+index 00000000000..e22f981f2e9
+--- /dev/null
++++ b/deps/v8/src/numbers/hash-seed.cc
+@@ -0,0 +1,55 @@
++// Copyright 2026 the V8 project authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "src/numbers/hash-seed.h"
++
++#include <cstddef>
++
++#include "src/execution/isolate.h"
++#include "src/flags/flags.h"
++#include "src/numbers/hash-seed-inl.h"
++#include "src/objects/name.h"
++#include "third_party/rapidhash-v8/secret.h"
++
++namespace v8 {
++namespace internal {
++
++namespace {
++
++static constexpr HashSeed::Data kDefaultSeed = {
++    0,
++    {RAPIDHASH_DEFAULT_SECRET[0], RAPIDHASH_DEFAULT_SECRET[1],
++     RAPIDHASH_DEFAULT_SECRET[2]}};
++
++}  // anonymous namespace
++
++static_assert(HashSeed::kSecretsCount == arraysize(RAPIDHASH_DEFAULT_SECRET));
++const HashSeed::Data* const HashSeed::kDefaultData = &kDefaultSeed;
++
++// static
++void HashSeed::InitializeRoots(Isolate* isolate) {
++  DCHECK(!isolate->heap()->deserialization_complete());
++  uint64_t seed;
++  if (v8_flags.hash_seed == 0) {
++    int64_t rnd = isolate->random_number_generator()->NextInt64();
++    seed = static_cast<uint64_t>(rnd);
++  } else {
++    seed = static_cast<uint64_t>(v8_flags.hash_seed);
++  }
++
++  // Write the seed and derived secrets into the read-only roots ByteArray.
++  Data* data = const_cast<Data*>(HashSeed(isolate).data_);
++
++#if V8_USE_DEFAULT_HASHER_SECRET
++  // Copy from the default seed and just override the meta seed.
++  *data = kDefaultSeed;
++  data->seed = seed;
++#else
++  data->seed = seed;
++  rapidhash_make_secret(seed, data->secrets);
++#endif  // V8_USE_DEFAULT_HASHER_SECRET
++}
++
++}  // namespace internal
++}  // namespace v8
+diff --git a/deps/v8/src/numbers/hash-seed.h b/deps/v8/src/numbers/hash-seed.h
+index 48368a25120..87b61c50320 100644
+--- a/deps/v8/src/numbers/hash-seed.h
++++ b/deps/v8/src/numbers/hash-seed.h
+@@ -5,7 +5,11 @@
+ #ifndef V8_NUMBERS_HASH_SEED_H_
+ #define V8_NUMBERS_HASH_SEED_H_
+ 
+-#include <stdint.h>
++#include <cstddef>
++#include <cstdint>
++#include <type_traits>
++
++#include "src/base/macros.h"
+ 
+ namespace v8 {
+ namespace internal {
+@@ -14,28 +18,56 @@ class Isolate;
+ class LocalIsolate;
+ class ReadOnlyRoots;
+ 
+-class HashSeed {
++// A lightweight view over the hash_seed ByteArray in read-only roots.
++class V8_EXPORT_PRIVATE HashSeed {
+  public:
+   inline explicit HashSeed(Isolate* isolate);
+   inline explicit HashSeed(LocalIsolate* isolate);
+   inline explicit HashSeed(ReadOnlyRoots roots);
+-  inline explicit HashSeed(uint64_t seed, const uint64_t secret[3]);
+ 
+   static inline HashSeed Default();
+ 
+-  uint64_t seed() const { return seed_; }
+-  const uint64_t* secret() const { return secret_; }
++  inline uint64_t seed() const;
++  inline const uint64_t* secret() const;
++
++  bool operator==(const HashSeed& b) const { return data_ == b.data_; }
++
++  static constexpr int kSecretsCount = 3;
++
++  // The ReadOnlyRoots::hash_seed() byte array can be interpreted
++  // as a HashSeed::Data struct.
++  // Since this maps over either the read-only roots or over a static byte
++  // array, and in both cases, must be allocated at 8-byte boundaries,
++  // we don't use V8_OBJECT here.
++  struct Data {
++    // meta seed from --hash-seed, 0 = generate at startup
++    uint64_t seed;
++    // When V8_USE_DEFAULT_HASHER_SECRET is enabled, these are just
++    // RAPIDHASH_DEFAULT_SECRET. Otherwise they are derived from the seed
++    // using rapidhash_make_secret().
++    uint64_t secrets[kSecretsCount];
++  };
+ 
+-  constexpr bool operator==(const HashSeed& b) const {
+-    return seed_ == b.seed_ && secret_[0] == b.secret_[0] &&
+-           secret_[1] == b.secret_[1] && secret_[2] == b.secret_[2];
+-  }
++  static constexpr int kTotalSize = sizeof(Data);
++
++  // Generates a hash seed (from --hash-seed or the RNG) and writes it
++  // together with derived secrets into the isolate's hash_seed in
++  // its read-only roots.
++  static void InitializeRoots(Isolate* isolate);
+ 
+  private:
+-  uint64_t seed_;
+-  uint64_t secret_[3];
++  // Pointer into the Data overlaying the ByteArray data (either
++  // points to read-only roots or to kDefaultData).
++  const Data* data_;
++  HashSeed(const Data* data) : data_(data) {}
++
++  // Points to the static constexpr default seed.
++  static const Data* const kDefaultData;
+ };
+ 
++static_assert(std::is_trivially_copyable_v<HashSeed>);
++static_assert(alignof(HashSeed::Data) == alignof(uint64_t));
++
+ }  // namespace internal
+ }  // namespace v8
+ 
+diff --git a/deps/v8/src/objects/fixed-array-inl.h b/deps/v8/src/objects/fixed-array-inl.h
+index 696deaf3187..85946f4ae4f 100644
+--- a/deps/v8/src/objects/fixed-array-inl.h
++++ b/deps/v8/src/objects/fixed-array-inl.h
+@@ -518,15 +518,15 @@ template <class IsolateT>
+ Handle<D> PrimitiveArrayBase<D, S, P>::Allocate(
+     IsolateT* isolate, int length,
+     std::optional<DisallowGarbageCollection>* no_gc_out,
+-    AllocationType allocation) {
++    AllocationType allocation, AllocationAlignment alignment) {
+   // Note 0-length is explicitly allowed since not all subtypes can be
+   // assumed to have canonical 0-length instances.
+   DCHECK_GE(length, 0);
+   DCHECK_LE(length, kMaxLength);
+   DCHECK(!no_gc_out->has_value());
+ 
+-  Tagged<D> xs = UncheckedCast<D>(
+-      isolate->factory()->AllocateRawArray(SizeFor(length), allocation));
++  Tagged<D> xs = UncheckedCast<D>(isolate->factory()->AllocateRawArray(
++      SizeFor(length), allocation, alignment));
+ 
+   ReadOnlyRoots roots{isolate};
+   if (DEBUG_BOOL) no_gc_out->emplace();
+@@ -745,7 +745,8 @@ DirectHandle<ArrayList> ArrayList::New(IsolateT* isolate, int capacity,
+ // static
+ template <class IsolateT>
+ Handle<ByteArray> ByteArray::New(IsolateT* isolate, int length,
+-                                 AllocationType allocation) {
++                                 AllocationType allocation,
++                                 AllocationAlignment alignment) {
+   if (V8_UNLIKELY(static_cast<unsigned>(length) > kMaxLength)) {
+     FATAL("Fatal JavaScript invalid size error %d", length);
+   } else if (V8_UNLIKELY(length == 0)) {
+@@ -754,7 +755,7 @@ Handle<ByteArray> ByteArray::New(IsolateT* isolate, int length,
+ 
+   std::optional<DisallowGarbageCollection> no_gc;
+   Handle<ByteArray> result =
+-      Cast<ByteArray>(Allocate(isolate, length, &no_gc, allocation));
++      Cast<ByteArray>(Allocate(isolate, length, &no_gc, allocation, alignment));
+ 
+   int padding_size = SizeFor(length) - OffsetOfElementAt(length);
+   memset(&result->values()[length], 0, padding_size);
+diff --git a/deps/v8/src/objects/fixed-array.h b/deps/v8/src/objects/fixed-array.h
+index 885f332ad7a..b2349a378c4 100644
+--- a/deps/v8/src/objects/fixed-array.h
++++ b/deps/v8/src/objects/fixed-array.h
+@@ -438,7 +438,8 @@ class PrimitiveArrayBase : public detail::ArrayHeaderBase<Super, true> {
+   static Handle<Derived> Allocate(
+       IsolateT* isolate, int length,
+       std::optional<DisallowGarbageCollection>* no_gc_out,
+-      AllocationType allocation = AllocationType::kYoung);
++      AllocationType allocation = AllocationType::kYoung,
++      AllocationAlignment alignment = kTaggedAligned);
+ 
+   inline bool IsInBounds(int index) const;
+ 
+@@ -769,7 +770,8 @@ V8_OBJECT class ByteArray
+   template <class IsolateT>
+   static inline Handle<ByteArray> New(
+       IsolateT* isolate, int capacity,
+-      AllocationType allocation = AllocationType::kYoung);
++      AllocationType allocation = AllocationType::kYoung,
++      AllocationAlignment alignment = kTaggedAligned);
+ 
+   inline uint32_t get_int(int offset) const;
+   inline void set_int(int offset, uint32_t value);
+diff --git a/deps/v8/src/snapshot/read-only-deserializer.cc b/deps/v8/src/snapshot/read-only-deserializer.cc
+index f1056d7aa6b..c63e3ec1e27 100644
+--- a/deps/v8/src/snapshot/read-only-deserializer.cc
++++ b/deps/v8/src/snapshot/read-only-deserializer.cc
+@@ -8,6 +8,7 @@
+ #include "src/heap/heap-inl.h"
+ #include "src/heap/read-only-heap.h"
+ #include "src/logging/counters-scopes.h"
++#include "src/numbers/hash-seed.h"
+ #include "src/objects/objects-inl.h"
+ #include "src/objects/slots.h"
+ #include "src/snapshot/embedded/embedded-data-inl.h"
+@@ -174,7 +175,7 @@ void ReadOnlyDeserializer::DeserializeIntoIsolate() {
+ #endif
+ 
+   if (should_rehash()) {
+-    isolate()->heap()->InitializeHashSeed();
++    HashSeed::InitializeRoots(isolate());
+     Rehash();
+   }
+ 
+diff --git a/deps/v8/src/snapshot/shared-heap-deserializer.cc b/deps/v8/src/snapshot/shared-heap-deserializer.cc
+index bfb4a8948d5..1c881843e4c 100644
+--- a/deps/v8/src/snapshot/shared-heap-deserializer.cc
++++ b/deps/v8/src/snapshot/shared-heap-deserializer.cc
+@@ -29,7 +29,7 @@ void SharedHeapDeserializer::DeserializeIntoIsolate() {
+ 
+   if (should_rehash()) {
+     // The hash seed has already been initialized in ReadOnlyDeserializer, thus
+-    // there is no need to call `isolate()->heap()->InitializeHashSeed();`.
++    // there is no need to call `HashSeed::InitializeRoots(isolate());`.
+     Rehash();
+   }
+ }
+-- 
+2.50.1 (Apple Git-155)
+
