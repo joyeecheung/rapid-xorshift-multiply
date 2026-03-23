@@ -1,5 +1,5 @@
 CXX      ?= clang++
-CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra
+CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra
 
 SRCS    := $(wildcard src/*.cpp)
 BINS    := $(SRCS:src/%.cpp=build/%)

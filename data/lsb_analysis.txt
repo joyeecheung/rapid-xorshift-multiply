@@ -1,0 +1,88 @@
+16-bit exhaustive LSB collision analysis
+Hash: h(x,m1,m2,m3) = f(g(f(g(f(g(f(x),m1)),m2)),m3))
+  f(x) = (x ^ (x >> 8)) & 0xFFFF
+  g(x,m) = (x * m) & 0xFFFF
+Domain: 0..65535, Keys: balanced-odd 16-bit (2450 values)
+Total pairs: 2147450880, Total key triples: 14706125000
+Theoretical max hash evaluations: 7821129924151345152
+
+============================================
+  k = 1  (low 1 bit, mask = 0x1)
+============================================
+Survival distribution:
+  0 triples:          1073741824 pairs
+  1 triple:           536870912 pairs
+  2-9 triples:        523010048 pairs
+  10-99 triples:      5439488 pairs
+  100-999 triples:    65536 pairs
+  1000-9999 triples:  8322929 pairs
+  10000+ triples:     143 pairs
+  ALL (14706125000):   0 pairs
+
+Best-surviving pair: (8711, 52247) survived 6002509 / 14706125000 triples
+Total hash evaluations:  51186064544
+Theoretical max:         7821129924151345152
+Coverage:                0.000000654%
+
+>>> Pairs surviving ALL key triples for k=1: 0 <<<
+
+============================================
+  k = 2  (low 2 bits, mask = 0x3)
+============================================
+Survival distribution:
+  0 triples:          1610612736 pairs
+  1 triple:           402653184 pairs
+  2-9 triples:        130940928 pairs
+  10-99 triples:      1163264 pairs
+  100-999 triples:    16384 pairs
+  1000-9999 triples:  2064384 pairs
+  10000+ triples:     0 pairs
+  ALL (14706125000):   0 pairs
+
+Best-surviving pair: (4357, 61331) survived 9801 / 14706125000 triples
+Total hash evaluations:  15890936422
+Theoretical max:         7821129924151345152
+Coverage:                0.000000203%
+
+>>> Pairs surviving ALL key triples for k=2: 0 <<<
+
+============================================
+  k = 3  (low 3 bits, mask = 0x7)
+============================================
+Survival distribution:
+  0 triples:          1879048192 pairs
+  1 triple:           234815488 pairs
+  2-9 triples:        32485376 pairs
+  10-99 triples:      86016 pairs
+  100-999 triples:    0 pairs
+  1000-9999 triples:  1015808 pairs
+  10000+ triples:     0 pairs
+  ALL (14706125000):   0 pairs
+
+Best-surviving pair: (4357, 61331) survived 9800 / 14706125000 triples
+Total hash evaluations:  9897889238
+Theoretical max:         7821129924151345152
+Coverage:                0.000000127%
+
+>>> Pairs surviving ALL key triples for k=3: 0 <<<
+
+============================================
+  k = 4  (low 4 bits, mask = 0xF)
+============================================
+Survival distribution:
+  0 triples:          2013265920 pairs
+  1 triple:           125743104 pairs
+  2-9 triples:        7946240 pairs
+  10-99 triples:      4096 pairs
+  100-999 triples:    0 pairs
+  1000-9999 triples:  491520 pairs
+  10000+ triples:     0 pairs
+  ALL (14706125000):   0 pairs
+
+Best-surviving pair: (332, 6941) survived 2454 / 14706125000 triples
+Total hash evaluations:  6989053928
+Theoretical max:         7821129924151345152
+Coverage:                0.000000089%
+
+>>> Pairs surviving ALL key triples for k=4: 0 <<<
+

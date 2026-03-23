@@ -1,0 +1,67 @@
+=== Seed Avalanche Test ===
+Exhaustive over 2^24 inputs x 64 seed bits.
+Flips each bit in the 64-bit meta seed, regenerates secrets
+and measures output change.
+Ideal SAC bias = 0.0 (each output bit flips 50% of the time).
+
+  initial RNG seed: 0x0000094269c297c5
+
+     #  meta_seed             m1                 m2                 m3                   2-round   3-round
+  ----  --------------------  ------------------ ------------------ ------------------  --------  --------
+     1  0xdb05239a9c333370  0xe46c47            0x56b163            0xd28d95              0.2397    0.2509
+     2  0x71aedb4fd7e5d0af  0xe2c9a9            0x9c952b            0x93b263              0.2412    0.2458
+     3  0xe1fb7531a7ab9f58  0xd4a3a9            0x333c71            0x9a8ba3              0.2411    0.2412
+     4  0x1868804c06773b60  0x4ba559            0x5a2b33            0x1d2d1d              0.2480    0.2488
+     5  0x8d589acc57bb54e5  0x8e6a2b            0x3a87c9            0x7835c3              0.2294    0.2444
+     6  0x56eeb3ba4f3e2210  0xb4c571            0x33d193            0x69aa71              0.2408    0.2410
+     7  0xb7d107e177188c3e  0x550f55            0xa9c61d            0xe83a8b              0.2366    0.2469
+     8  0x03dc85179a93e470  0x872b47            0x56c639            0xb46535              0.2604    0.2427
+     9  0x5acad400deb0470a  0x5ac31d            0x33e8a3            0x536571              0.2390    0.2461
+    10  0xe32358fb445a732f  0xa6d265            0x535cd1            0xb8551b              0.2427    0.2333
+    11  0x87ef7eeec1a6227b  0x65c347            0x333365            0xe817a9              0.2577    0.2446
+    12  0x286e0b76cbc508d3  0x2b3aa9            0xb4f035            0xacb28d              0.2487    0.2461
+    13  0x39e127c042173b7a  0xb29317            0x39d14b            0x336917              0.2572    0.2467
+    14  0x44d1403c922b31b7  0xd8e1a3            0xc36317            0x3c47a5              0.2433    0.2436
+    15  0x2b0edfe7a175290d  0xf06317            0x5a742d            0x9536c5              0.2557    0.2475
+    16  0x4a1636e357c195fc  0x33562d            0x74ca55            0x2e2d69              0.2481    0.2406
+    17  0x0b55d10e08e4597d  0x335aa5            0xe42e59            0x691db1              0.2482    0.2449
+    18  0x31e405fb9d419afc  0x964d0f            0x27c3c9            0x6ce2d1              0.2561    0.2504
+    19  0x9f9189b5f960e755  0xd1e853            0x6c9a33            0xe16527              0.2593    0.2454
+    20  0x6fbcb04e7696a7f9  0x1d95a3            0x47330f            0x7847d1              0.2491    0.2482
+    21  0xb52e4a46ca696619  0x72b293            0xe1390f            0xcc1b1d              0.2533    0.2401
+    22  0x5cae114e656709e6  0xc62e4d            0x8ed833            0x74e471              0.2536    0.2410
+    23  0x4c22f2ab220111f5  0x783ac3            0x591d8b            0x6aa9e1              0.2474    0.2406
+    24  0x180aaaf66802ea06  0xa6391b            0x693a87            0xcc4b71              0.2419    0.2426
+    25  0x265cbf0a808c87ea  0x555559            0x1b1b55            0x634e2d              0.2417    0.2457
+    26  0x858602ee5159ae30  0xca6395            0x1bd88d            0xc63c63              0.2459    0.2375
+    27  0xd9e8f48693b2a6cc  0x7193a3            0xb23a59            0x2e72a3              0.2538    0.2480
+    28  0xd99826f572099c2c  0x563a4b            0x554eb1            0x4b9a59              0.2919    0.2476
+    29  0x32a55fa56927f789  0x5965c9            0xc97899            0x4b3a69              0.2392    0.2456
+    30  0xd3562d0ebff27c6c  0x5a568d            0xc971a3            0x53391b              0.2430    0.2446
+    31  0xf364b13a60ff364d  0x933963            0xb2e895            0xe43c65              0.2510    0.2439
+    32  0x86eed5154f1674f4  0x6a720f            0x39e855            0x5ca5e1              0.2388    0.2520
+    33  0xa87ad419a50a3648  0x5c7293            0x2b5c33            0x4bf04d              0.2556    0.2424
+    34  0xe7e1e726e7c53ed2  0x78e171            0x4d0f63            0x9c7233              0.2612    0.2408
+    35  0x12b9a17bbe3c7f4d  0x53874d            0x3ae871            0x1d1e35              0.2463    0.2517
+    36  0x315bc9d8845d1fb6  0x552769            0x6c0f27            0xd26c1b              0.2522    0.2343
+    37  0xdc82e32450d4ed83  0x5c6a99            0x3c5335            0xc69993              0.2474    0.2428
+    38  0x06e25a157c84e318  0xc33695            0x8e6533            0x36e471              0.2469    0.2453
+    39  0x9c79e6599957a587  0xd866a9            0x4b1b1d            0x3c59c9              0.2445    0.2491
+    40  0xa2d957f4c3a73c52  0xf055c9            0x6c3593            0x991717              0.2465    0.2435
+    41  0x15306466a15dbb26  0x3c4d55            0x8e5999            0x6a354d              0.2836    0.2480
+    42  0xcdd55e4d0c808fcc  0xaa4727            0x1b0fe1            0x9c8ba9              0.2415    0.2453
+    43  0xe5764fb4d850a1ba  0x39c34b            0x6acc1d            0xa51b4d              0.2937    0.2483
+    44  0x1e26d6a27161310d  0xd8651d            0x9cb833            0x93c953              0.2621    0.2425
+    45  0x9a0ce45c80d7fd84  0x6c2b1b            0x6917b1            0x6a6517              0.2513    0.2387
+    46  0x6e9ebf420fa0a6e8  0x8dcc53            0x719c93            0x532d69              0.2477    0.2383
+    47  0x04d2ba815627ba06  0x2d5a8b            0x5a4d93            0x3a9627              0.2527    0.2444
+    48  0xf33c4339d69ebd82  0xa92b55            0x71f017            0x39174d              0.2537    0.2430
+    49  0xaf369f40eaa786b4  0x633c87            0xa37239            0xb1a58b              0.2491    0.2494
+    50  0x20e773e8203c64f1  0x1db1a5            0x788bb1            0x93e827              0.2559    0.2449
+
+  Summary:
+                     min      mean       max    stddev
+  2-round:        0.2294    0.2507    0.2937    0.0121
+  3-round:        0.2333    0.2444    0.2520    0.0040
+
+  Scale: 0 = ideal, 1000 = identity
