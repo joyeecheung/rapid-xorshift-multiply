@@ -29,7 +29,7 @@ This family of xorshift-multiply constructions is used in many pseudorandom numb
 
 Since our multipliers are random secrets, the interaction between the two operations differs for each set of secrets, and multiple rounds of alternation helps spreading the uncertainty across all bits.
 
-A more detailed explanation of the development of our design can be found in [this Node.js blog post](TBD).
+A more detailed explanation of the development of our design can be found in [this Node.js blog post](https://nodejs.org/en/blog/vulnerability/march-2026-hashdos).
 
 ### Multiplier generation
 
